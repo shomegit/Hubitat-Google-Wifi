@@ -1,0 +1,180 @@
+/**
+ *  Google Wifi Monitor
+ *
+ *  Design Usage:
+ *  Retrieve data from GoogleWiFi. For use with Hubitat dashboards.
+ *
+ *  Copyright 2019 Helene Bor
+ *  
+ * ------------------------------------------------------------------------------------------------------------------------------
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ *
+ * ------------------------------------------------------------------------------------------------------------------------------
+ *
+ *  Driver updates can be found at https://github.com/shomegit/Hubitat-Google-Wifi/
+ *
+ * ------------------------------------------------------------------------------------------------------------------------------
+ *
+ *  Changes:
+ *
+ *
+ */
+
+metadata {
+	definition (name: "GoogleWiFiMonitor", namespace: "shome", author: "Helene Bor", importUrl: "") {
+		capability "Sensor"
+		capability "Polling"
+
+		attribute "online", "bool"
+		attribute "softwareVersion", "string"
+		attribute "uptime", "string"
+		attribute "updateRequired", "bool"
+
+		
+		attribute "googlewifiTile", "string"
+	}
+
+	preferences {
+		input name: "about", type: "paragraph", title: "GoogleWifiMonitor", description: "Retrieve data from GoogleWifi. For use with Hubitat dashboards."
+		input "fontSizeIndex", "text", title: "Font Size-Index", required: true, defaultValue: "70"
+		input "fontSizeTriggers", "text", title: "Font Size-Triggers", required: true, defaultValue: "60"
+		input "logEnable", "bool", title: "Enable logging", required: true, defaultValue: false
+	}
+}
+
+def installed() {
+	runEvery1Hour(poll)
+	poll()
+}
+
+def updated() {
+	poll()
+}
+
+def uninstalled() {
+	unschedule()
+}
+
+def poll() {
+	if(logEnable) log.debug "In poll..."
+	def googlewifiZip = null
+
+	def params = [
+		uri: 'http://onhub.here/api/v1/status',
+		path: googlewifiZip,
+		headers: [Referer:'http://onhub.here']
+	]
+
+	try {
+		httpGet(params) {resp ->
+			resp.data.Location.periods.each {period ->
+				if(period.Type == 'Yesterday') {
+					def catName = ""
+					def indexNum = period.Index.toFloat()
+					
+					// Set the category according to index thresholds
+					if (indexNum < 2.5) {catName = "Low"}
+					else if (indexNum < 4.9) {catName = "Low-Medium"}
+					else if (indexNum < 7.3) {catName = "Medium"}
+					else if (indexNum < 9.7) {catName = "Medium-High"}
+					else if (indexNum < 12) {catName = "High"}
+					else {catName = "Unknown"}
+					
+					// Build the list of allergen triggers
+					def triggersList = period.Triggers.inject([]) { result, entry ->
+						result << "${entry.Name}"
+					}.join(", ")
+					state.indexYesterday = period.Index
+					state.categoryYesterday = catName
+					state.triggersYesterday = triggersList
+					
+					sendEvent(name: "indexYesterday", value: state.indexYesterday, displayed: true)
+					sendEvent(name: "categoryYesterday", value: state.categoryYesterday, displayed: true)
+					sendEvent(name: "triggersYesterday", value: state.triggersYesterday, displayed: true)
+				}
+				
+				if(period.Type == 'Today') {
+					def catName = ""
+					def indexNum = period.Index.toFloat()
+					
+					// Set the category according to index thresholds
+					if (indexNum < 2.5) {catName = "Low"}
+					else if (indexNum < 4.9) {catName = "Low-Medium"}
+					else if (indexNum < 7.3) {catName = "Medium"}
+					else if (indexNum < 9.7) {catName = "Medium-High"}
+					else if (indexNum < 12) {catName = "High"}
+					else {catName = "Unknown"}
+					
+					// Build the list of allergen triggers
+					def triggersList = period.Triggers.inject([]) { result, entry ->
+						result << "${entry.Name}"
+					}.join(", ")
+					state.indexToday = period.Index
+					state.categoryToday = catName
+					state.triggersToday = triggersList
+					
+					sendEvent(name: "indexToday", value: state.indexToday, displayed: true)
+					sendEvent(name: "categoryToday", value: state.categoryToday, displayed: true)
+					sendEvent(name: "triggersToday", value: state.triggersToday, displayed: true)
+				}
+				
+				if(period.Type == 'Tomorrow') {
+					def catName = ""
+					def indexNum = period.Index.toFloat()
+					
+					// Set the category according to index thresholds
+					if (indexNum < 2.5) {catName = "Low"}
+					else if (indexNum < 4.9) {catName = "Low-Medium"}
+					else if (indexNum < 7.3) {catName = "Medium"}
+					else if (indexNum < 9.7) {catName = "Medium-High"}
+					else if (indexNum < 12) {catName = "High"}
+					else {catName = "Unknown"}
+					
+					// Build the list of allergen triggers
+					def triggersList = period.Triggers.inject([]) { result, entry ->
+						result << "${entry.Name}"
+					}.join(", ")
+					state.indexTomorrow = period.Index
+					state.categoryTomorrow = catName
+					state.triggersTomorrow = triggersList
+					
+					sendEvent(name: "indexTomorrow", value: state.indexTomorrow, displayed: true)
+					sendEvent(name: "categoryTomorrow", value: state.categoryTomorrow, displayed: true)
+					sendEvent(name: "triggersTomorrow", value: state.triggersTomorrow, displayed: true)
+				}
+				state.location = resp.data.Location.DisplayLocation
+				sendEvent(name: "location", value: state.location, displayed: true)
+			}
+		}
+	}
+	catch (SocketTimeoutException e) {
+		if(logEnable) log.debug "Connection to GoogleWiFi API timed out."
+		sendEvent(name: "location", value: "Connection timed out while retrieving data from API", displayed: true)
+	}
+	catch (e) {
+		if(logEnable) log.debug "Could not retrieve GoogleWiFi data: $e"
+		sendEvent(name: "location", value: "Could not retrieve data from API", displayed: true)
+	}
+	yesterdayTileMap()
+}
+
+def configure() {
+	poll()
+}
+
+def yesterdayTileMap() {
+	if(logEnable) log.debug "In yesterdayTileMap..."
+	state.appDataYesterday = "<table width='100%'>"
+	state.appDataYesterday+= "<tr><td><div style='font-size:.${fontSizeTriggers}em;'>Pollen Forecast Today<br>${state.location}</div></td></tr>"
+	state.appDataYesterday+= "<tr><td><div style='font-size:.${fontSizeIndex}em;'>${state.indexYesterday} - ${state.categoryYesterday}</div></td></tr>"
+	state.appDataYesterday+= "<tr><td><div style='font-size:.${fontSizeTriggers}em;'>${state.triggersYesterday}</div></td></tr>"
+	state.appDataYesterday+= "</table>"
+	sendEvent(name: "yesterdayTile", value: state.appDataYesterday, displayed: true)
+}
